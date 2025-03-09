@@ -1,0 +1,117 @@
+import React, { useState } from "react";
+import { MapContainer, TileLayer, Polyline } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import { parseString } from "xml2js";
+
+const KMLProcessor = () => {
+  const [kmlData, setKmlData] = useState(null);
+  const [summary, setSummary] = useState(null);
+  const [details, setDetails] = useState(null);
+
+  const handleFileUpload = (event) => {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target.result;
+      parseString(text, (err, result) => {
+        if (err) {
+          console.error("Error parsing KML:", err);
+          return;
+        }
+        processKML(result);
+      });
+    };
+    reader.readAsText(file);
+  };
+
+  const processKML = (parsedData) => {
+    const placemarks = parsedData.kml.Document[0].Placemark || [];
+    const elementCounts = {};
+    const elementDetails = [];
+
+    placemarks.forEach((placemark) => {
+      if (placemark.LineString) {
+        const coordinates = placemark.LineString[0].coordinates[0]
+          .trim()
+          .split(" ")
+          .map((coord) => coord.split(",").map(Number));
+        const length = calculateLength(coordinates);
+        elementCounts["LineString"] = (elementCounts["LineString"] || 0) + 1;
+        elementDetails.push({ type: "LineString", length, coordinates });
+      }
+    });
+
+    setSummary(elementCounts);
+    setDetails(elementDetails);
+    setKmlData(elementDetails);
+  };
+
+  const calculateLength = (coords) => {
+    let totalLength = 0;
+    for (let i = 0; i < coords.length - 1; i++) {
+      const [lon1, lat1] = coords[i];
+      const [lon2, lat2] = coords[i + 1];
+      totalLength += Math.sqrt(Math.pow(lon2 - lon1, 2) + Math.pow(lat2 - lat1, 2));
+    }
+    return totalLength.toFixed(2);
+  };
+
+  return (
+    <div>
+      <input type="file" accept=".kml" onChange={handleFileUpload} />
+      <button onClick={() => setSummary(summary)}>Summary</button>
+      <button onClick={() => setDetails(details)}>Detailed</button>
+      
+      {summary && (
+        <table border="1">
+          <thead>
+            <tr>
+              <th>Element Type</th>
+              <th>Count</th>
+            </tr>
+          </thead>
+          <tbody>
+            {Object.entries(summary).map(([type, count]) => (
+              <tr key={type}>
+                <td>{type}</td>
+                <td>{count}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      
+      {details && (
+        <table border="1">
+          <thead>
+            <tr>
+              <th>Element Type</th>
+              <th>Total Length</th>
+            </tr>
+          </thead>
+          <tbody>
+            {details.map((detail, index) => (
+              <tr key={index}>
+                <td>{detail.type}</td>
+                <td>{detail.length} km</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {kmlData && (
+        <MapContainer center={[0, 0]} zoom={2} style={{ height: "400px", width: "100%" }}>
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          {kmlData.map((detail, index) => (
+            <Polyline key={index} positions={detail.coordinates} color="blue" />
+          ))}
+        </MapContainer>
+      )}
+    </div>
+  );
+};
+
+export default KMLProcessor;
